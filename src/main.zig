@@ -6,19 +6,23 @@ const ArgValue = arg_parser.ArgValue;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    defer _ = gpa.detectLeaks();
+
     const allocator = gpa.allocator();
 
-    const parser = ArgParser{
+    var parser = try ArgParser.init(.{
         .allocator = allocator,
         .header = "Testing",
-        .args = &.{
+        .specs = &.{
             .{
                 .type = .Int,
                 .default = ArgValue{ .Int = 42 },
                 .names = &.{ "-test", "-t" },
             },
         },
-    };
+    });
+    defer parser.deinit();
 
     try parser.parse();
 }
