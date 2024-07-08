@@ -69,10 +69,6 @@ pub const ArgParser = struct {
         const args = try std.process.argsAlloc(self.allocator);
         defer std.process.argsFree(self.allocator, args);
         try self.parse_strings(args);
-        var iter = self.values.iterator();
-        while (iter.next()) |item| {
-            print("key: {s} value: {}\n", .{ item.key_ptr.*, item.value_ptr.* });
-        }
     }
 
     pub fn parse_strings(self: *ArgParser, args: []const []const u8) !void {
@@ -82,12 +78,15 @@ pub const ArgParser = struct {
             if (i == 0) continue;
             if (state == .arg_next and self.names.contains(str)) {
                 spec = self.names.get(str).?;
-                print("arg: {s} {}\n", .{ str, @TypeOf(str) });
                 state = .value_next;
             } else if (state == .value_next) {
-                const value = ArgValue{ .String = str };
-                print("arg value: {s} {}\n", .{ str, value });
-                // try self.values.put(key, value);
+                const value = switch (spec.type) {
+                    ArgType.Int => ArgValue{ .int = try std.fmt.parseInt(i64, str, 10) },
+                    ArgType.Float => ArgValue{ .float = try std.fmt.parseFloat(f64, str) },
+                    ArgType.Bool => ArgValue{ .bool = true },
+                    ArgType.String => ArgValue{ .string = str },
+                };
+                try self.values.put(spec.name, value);
                 state = .arg_next;
             }
         }
@@ -106,11 +105,11 @@ pub const ArgSpec = struct {
     default: ?ArgValue,
 };
 
-pub const ArgValue = union(ArgType) {
-    Int: i64,
-    Float: f64,
-    Bool: bool,
-    String: []const u8,
+pub const ArgValue = union {
+    int: i64,
+    float: f64,
+    bool: bool,
+    string: []const u8,
 };
 
 pub const ArgType = enum { Int, Float, Bool, String };

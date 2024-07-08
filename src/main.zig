@@ -18,7 +18,7 @@ pub fn main() !void {
 
     try parser.add(.{
         .type = .Int,
-        .default = arg_parser.ArgValue{ .Int = 42 },
+        .default = arg_parser.ArgValue{ .int = 42 },
         .name = "-test",
     });
 
