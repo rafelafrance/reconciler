@@ -32,3 +32,12 @@ test "parse an int" {
     const actual = parser.values.get("-test").?.int;
     try expect(actual == 420);
 }
+
+test "parse an invalid int" {
+    const allocator = std.testing.allocator;
+    var parser = try init_parser(allocator);
+    defer parser.deinit();
+
+    const args: []const []const u8 = &.{ "prog", "-test", "bad20" };
+    try std.testing.expectError(error.InvalidCharacter, parser.parse_strings(args));
+}

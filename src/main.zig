@@ -14,6 +14,7 @@ pub fn main() !void {
         .allocator = allocator,
         .header = "Testing header",
     });
+    errdefer std.process.exit(1);
     defer parser.deinit();
 
     try parser.add(.{

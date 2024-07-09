@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const print = std.debug.print;
-
 pub const ArgParser = struct {
     allocator: std.mem.Allocator,
     header: []const u8,
@@ -72,27 +70,51 @@ pub const ArgParser = struct {
     }
 
     pub fn parse_strings(self: *ArgParser, args: []const []const u8) !void {
-        var state: ArgState = .arg_next;
+        var state: ArgState = .arg_expected;
         var spec: *const ArgSpec = undefined;
+        var name: []const u8 = undefined;
         for (args, 0..) |str, i| {
             if (i == 0) continue;
-            if (state == .arg_next and self.names.contains(str)) {
+            if (state == .arg_expected and self.names.contains(str)) {
                 spec = self.names.get(str).?;
-                state = .value_next;
-            } else if (state == .value_next) {
+                name = str;
+                if (spec.type == .Bool) {
+                    try self.values.put(name, ArgValue{ .bool = switch (spec.action) {
+                        .store_true => true,
+                        .store_false => false,
+                        else => {
+                            std.log.err("Error {!}", .{ArgError.InvalidBool});
+                            return ArgError.InvalidBool;
+                        },
+                    } });
+                    state = .arg_expected;
+                } else {
+                    state = .value_expected;
+                }
+            } else if (state == .value_expected) {
                 const value = switch (spec.type) {
-                    ArgType.Int => ArgValue{ .int = try std.fmt.parseInt(i64, str, 10) },
-                    ArgType.Float => ArgValue{ .float = try std.fmt.parseFloat(f64, str) },
-                    ArgType.Bool => ArgValue{ .bool = true },
+                    ArgType.Int => ArgValue{
+                        .int = std.fmt.parseInt(i64, str, 0) catch |err| {
+                            const msg = "{!} when processing arg = '{s}' with value = '{s}'\n";
+                            std.log.err(msg, .{ err, name, str });
+                            return err;
+                        },
+                    },
+                    ArgType.Float => ArgValue{ .float = std.fmt.parseFloat(f64, str) catch |err| {
+                        const msg = "{!} when processing arg = '{s}'' with, value = '{s}'\n";
+                        std.log.err(msg, .{ err, name, str });
+                        return err;
+                    } },
                     ArgType.String => ArgValue{ .string = str },
+                    else => continue,
                 };
                 try self.values.put(spec.name, value);
-                state = .arg_next;
+                state = .arg_expected;
             }
         }
     }
 
-    const ArgState = enum { arg_next, value_next };
+    const ArgState = enum { arg_expected, value_expected };
 };
 
 pub const ArgSpec = struct {
@@ -113,5 +135,5 @@ pub const ArgValue = union {
 };
 
 pub const ArgType = enum { Int, Float, Bool, String };
-pub const ArgAction = enum { store, append, store_true, store_false };
-pub const ArgError = error{};
+pub const ArgAction = enum { store, append, store_true, store_false, count };
+pub const ArgError = error{InvalidBool};
