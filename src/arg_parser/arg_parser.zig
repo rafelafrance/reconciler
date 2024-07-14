@@ -13,7 +13,7 @@ pub const ArgParser = struct {
         header: []const u8 = "",
         footer: []const u8 = "",
     }) !ArgParser {
-        const parser = ArgParser{
+        return .{
             .allocator = config.allocator,
             .header = config.header,
             .footer = config.footer,
@@ -21,7 +21,6 @@ pub const ArgParser = struct {
             .names = std.StringHashMap(*ArgSpec).init(config.allocator),
             .values = std.StringHashMap(ArgValue).init(config.allocator),
         };
-        return parser;
     }
 
     pub fn add(self: *ArgParser, config: struct {
@@ -34,7 +33,6 @@ pub const ArgParser = struct {
         default: ?ArgValue = null,
     }) !void {
         const ptr = try self.allocator.create(ArgSpec);
-        errdefer self.allocator.destroy(ptr);
 
         ptr.* = ArgSpec{
             .type = config.type,
@@ -48,28 +46,24 @@ pub const ArgParser = struct {
 
         try self.specs.append(ptr);
 
-        if (ptr.named) {
-            try self.names.put(ptr.name, ptr);
-        }
+        if (ptr.named) try self.names.put(ptr.name, ptr);
     }
 
     pub fn deinit(self: *ArgParser) void {
         self.names.deinit();
         self.values.deinit();
 
-        for (self.specs.items) |spec| {
-            self.allocator.destroy(spec);
-        }
+        for (self.specs.items) |spec| self.allocator.destroy(spec);
         self.specs.deinit();
     }
 
     pub fn parse(self: *ArgParser) !void {
         const args = try std.process.argsAlloc(self.allocator);
         defer std.process.argsFree(self.allocator, args);
-        try self.parse_strings(args);
+        try self.parseStrings(args);
     }
 
-    pub fn parse_strings(self: *ArgParser, args: []const []const u8) !void {
+    pub fn parseStrings(self: *ArgParser, args: []const []const u8) !void {
         var state: ArgState = .arg_expected;
         var spec: *const ArgSpec = undefined;
         var name: []const u8 = undefined;
@@ -95,13 +89,13 @@ pub const ArgParser = struct {
                 const value = switch (spec.type) {
                     ArgType.Int => ArgValue{
                         .int = std.fmt.parseInt(i64, str, 0) catch |err| {
-                            const msg = "{!} when processing arg = '{s}' with value = '{s}'\n";
+                            const msg = "{!} when processing arg = '{s}' and value = '{s}'\n";
                             std.log.err(msg, .{ err, name, str });
                             return err;
                         },
                     },
                     ArgType.Float => ArgValue{ .float = std.fmt.parseFloat(f64, str) catch |err| {
-                        const msg = "{!} when processing arg = '{s}'' with, value = '{s}'\n";
+                        const msg = "{!} when processing arg = '{s}' and value = '{s}'\n";
                         std.log.err(msg, .{ err, name, str });
                         return err;
                     } },
