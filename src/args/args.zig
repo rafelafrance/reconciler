@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const ArgParser = struct {
+pub const Args = struct {
     allocator: std.mem.Allocator,
     header: []const u8,
     footer: []const u8,
@@ -12,7 +12,7 @@ pub const ArgParser = struct {
         allocator: std.mem.Allocator,
         header: []const u8 = "",
         footer: []const u8 = "",
-    }) !ArgParser {
+    }) !Args {
         return .{
             .allocator = config.allocator,
             .header = config.header,
@@ -23,7 +23,7 @@ pub const ArgParser = struct {
         };
     }
 
-    pub fn add(self: *ArgParser, config: struct {
+    pub fn add(self: *Args, config: struct {
         type: ArgType,
         named: bool = true,
         name: []const u8 = "",
@@ -49,7 +49,7 @@ pub const ArgParser = struct {
         if (ptr.named) try self.names.put(ptr.name, ptr);
     }
 
-    pub fn deinit(self: *ArgParser) void {
+    pub fn deinit(self: *Args) void {
         self.names.deinit();
         self.values.deinit();
 
@@ -57,13 +57,13 @@ pub const ArgParser = struct {
         self.specs.deinit();
     }
 
-    pub fn parse(self: *ArgParser) !void {
+    pub fn parse(self: *Args) !void {
         const args = try std.process.argsAlloc(self.allocator);
         defer std.process.argsFree(self.allocator, args);
         try self.parseStrings(args);
     }
 
-    pub fn parseStrings(self: *ArgParser, args: []const []const u8) !void {
+    pub fn parseStrings(self: *Args, args: []const []const u8) !void {
         var state: ArgState = .arg_expected;
         var spec: *const ArgSpec = undefined;
         var name: []const u8 = undefined;

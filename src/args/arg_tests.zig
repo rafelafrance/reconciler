@@ -1,12 +1,12 @@
 const std = @import("std");
-const arg_parser = @import("arg_parser.zig");
+const args_ = @import("args.zig");
 const expect = std.testing.expect;
 
-fn initParser(allocator: std.mem.Allocator) !arg_parser.ArgParser {
-    var parser = try arg_parser.ArgParser.init(.{ .allocator = allocator, .header = "Testing" });
+fn initParser(allocator: std.mem.Allocator) !args_.Args {
+    var parser = try args_.Args.init(.{ .allocator = allocator, .header = "Testing" });
     try parser.add(.{
         .type = .Int,
-        .default = arg_parser.ArgValue{ .int = 42 },
+        .default = args_.ArgValue{ .int = 42 },
         .name = "-test",
     });
     return parser;

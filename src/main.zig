@@ -1,11 +1,11 @@
 const std = @import("std");
 
-const arg_parser = @import("arg_parser/arg_parser.zig");
+const arg_parser = @import("args/arg_parser.zig");
 const ArgParser = arg_parser.ArgParser;
 const ArgValue = arg_parser.ArgValue;
 
 const csv_reader = @import("csv_reader/csv_reader.zig");
-const CsvReader = csv_reader.CsvReader;
+const Csv = csv_reader.CsvReader;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -13,27 +13,28 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var parser = try ArgParser.init(.{
+    var args = try ArgParser.init(.{
         .allocator = allocator,
         .header = "Testing header",
     });
-    errdefer std.process.exit(1);
-    defer parser.deinit();
+    // errdefer std.process.exit(1);
+    defer args.deinit();
 
-    try parser.add(.{
+    try args.add(.{
         .type = .Int,
         .default = arg_parser.ArgValue{ .int = 42 },
         .name = "-test",
     });
 
-    try parser.parse();
+    try args.parse();
 
-    const name = "data/raw/test.csv";
-    var reader = try CsvReader.init(.{
-        .allocator = allocator,
-        .path = "/srv/work/rafe/nfn/zig_label_reconciliations/" ++ name, // test absolute
-        // .path = name, // test relative
+    var csv_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer csv_arena.deinit();
+    const csv_alloc = csv_arena.allocator();
+
+    var csv = try Csv.init(.{
+        .allocator = csv_alloc,
+        .path = "data/raw/test.csv",
     });
-    defer reader.deinit();
-    try reader.read();
+    try csv.read();
 }
