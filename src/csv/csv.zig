@@ -3,7 +3,7 @@ const std = @import("std");
 pub const Csv = struct {
     allocator: std.mem.Allocator,
     delimiter: u8, // record delimiter
-    cells: std.ArrayList(*Cell), // sparse list of parsed CSV cells
+    raw_cells: std.ArrayList(*RawCell), // sparse list of parsed CSV cells
     table: []?[]u8 = undefined, // holds CSV string pointers
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
     cols: usize = 0, // maximum number of columns in a row (CSVs rows may be ragged)
@@ -17,22 +17,22 @@ pub const Csv = struct {
         return Csv{
             .allocator = config.allocator,
             .delimiter = config.delimiter,
-            .cells = std.ArrayList(*Cell).init(config.allocator),
+            .raw_cells = std.ArrayList(*RawCell).init(config.allocator),
         };
     }
 
     pub fn deinit(self: *Csv) void { // skip if using an arena
         self.allocator.free(self.table);
-        for (self.cells.items) |item| {
+        for (self.raw_cells.items) |item| {
             self.allocator.free(item.buff);
             self.allocator.destroy(item);
         }
-        self.cells.deinit();
+        self.raw_cells.deinit();
     }
 
     pub fn cellValue(self: Csv, row: usize, col: usize) ![]u8 {
         if (row >= self.rows or col >= self.cols) {
-            const msg = "{!} max coordinates [{},{}] your coordinates [{},{}]\n";
+            const msg = "{!}: max coordinates [{},{}] your coordinates [{},{}]\n";
             std.log.err(msg, .{ CsvError.OutOfBounds, self.rows - 1, self.cols - 1, row, col });
             return CsvError.OutOfBounds;
         }
@@ -42,21 +42,13 @@ pub const Csv = struct {
 
     pub fn findInRow(self: Csv, row: usize, value: []u8) !?usize {
         for (0..self.cols) |col| {
-            const contents = try self.cellValue(row, col);
-            if (std.mem.eql(u8, contents, value)) return col;
+            if (std.mem.eql(u8, try self.cellValue(row, col), value)) return col;
         }
         return null;
     }
 
     pub fn parseString(self: *Csv, str: []u8) !void {
-        if (str.len > 0) {
-            try self.stringParser(str);
-        }
-        try self.createTable();
-    }
-
-    fn stringParser(self: *Csv, str: []u8) !void {
-        const size_m1 = str.len - 1;
+        const size_m1 = if (str.len > 0) str.len - 1 else 0;
         const array = [_]u8{ self.delimiter, '\r', '\n' };
         const enders = array[0..]; // Chars that end a cell
         var pos: usize = 0;
@@ -87,30 +79,31 @@ pub const Csv = struct {
                 }
             }
         }
+        try self.createTable();
     }
 
     fn appendCell(self: *Csv, raw: []u8) !void {
-        const ptr = try self.allocator.create(Cell);
+        const ptr = try self.allocator.create(RawCell);
 
         const buff = try self.allocator.alloc(u8, raw.len);
         const n = std.mem.replace(u8, raw, "\"\"", "\"", buff);
         const len = raw.len - n;
 
-        ptr.* = Cell{
+        ptr.* = RawCell{
             .row = self.curr_row,
             .col = self.curr_col,
             .buff = buff,
             .val = buff[0..len],
         };
 
-        try self.cells.append(ptr);
+        try self.raw_cells.append(ptr);
     }
 
     fn createTable(self: *Csv) !void {
-        if (self.rows > 0 and self.cols == 0) self.cols = 1; // Fix up single column CSVs
+        if (self.rows > 0 and self.cols == 0) self.cols = 1; // Fix single column CSVs
         self.table = try self.allocator.alloc(?[]u8, self.rows * self.cols);
         for (0..self.table.len) |i| self.table[i] = null;
-        for (self.cells.items) |item| {
+        for (self.raw_cells.items) |item| {
             const idx = item.row * self.cols + item.col;
             self.table[idx] = item.val;
         }
@@ -132,7 +125,7 @@ pub const Csv = struct {
         if (col > self.cols) self.cols = col;
     }
 
-    const Cell = struct {
+    const RawCell = struct {
         row: usize,
         col: usize,
         buff: []u8,
@@ -140,4 +133,4 @@ pub const Csv = struct {
     };
 };
 
-const CsvError = error{ OutOfBounds, NoFile };
+const CsvError = error{OutOfBounds};

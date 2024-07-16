@@ -1,11 +1,9 @@
 const std = @import("std");
 
-const arg_parser = @import("args/arg_parser.zig");
-const ArgParser = arg_parser.ArgParser;
-const ArgValue = arg_parser.ArgValue;
+const args_ = @import("args/args.zig");
+const ArgValue = args_.ArgValue;
 
-const csv_reader = @import("csv_reader/csv_reader.zig");
-const Csv = csv_reader.CsvReader;
+const csv_ = @import("csv/csv.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -13,7 +11,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var args = try ArgParser.init(.{
+    var args = try args_.Args.init(.{
         .allocator = allocator,
         .header = "Testing header",
     });
@@ -22,7 +20,7 @@ pub fn main() !void {
 
     try args.add(.{
         .type = .Int,
-        .default = arg_parser.ArgValue{ .int = 42 },
+        .default = ArgValue{ .int = 42 },
         .name = "-test",
     });
 
@@ -32,9 +30,16 @@ pub fn main() !void {
     defer csv_arena.deinit();
     const csv_alloc = csv_arena.allocator();
 
-    var csv = try Csv.init(.{
-        .allocator = csv_alloc,
-        .path = "data/raw/test.csv",
-    });
-    try csv.readFile();
+    var csv = try csv_.Csv.init(.{ .allocator = csv_alloc });
+
+    const data = try std.fs.cwd().readFileAlloc(
+        csv_alloc,
+        "data/raw/classifications.csv",
+        10_000_000,
+    );
+    try csv.parseString(data);
+
+    std.debug.print("data.len {}\n", .{data.len});
+    std.debug.print("csv [{},{}]\n", .{ csv.rows, csv.cols });
+    for (0..csv.cols) |c| std.debug.print("{s}\n", .{try csv.cellValue(0, c)});
 }
