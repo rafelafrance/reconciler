@@ -36,5 +36,5 @@ pub fn main() !void {
         .allocator = csv_alloc,
         .path = "data/raw/test.csv",
     });
-    try csv.read();
+    try csv.readFile();
 }
