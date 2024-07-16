@@ -17,8 +17,8 @@ pub fn main() !void {
         .allocator = allocator,
         .header = "Testing header",
     });
-    // errdefer std.process.exit(1);
     defer args.deinit();
+    errdefer std.process.exit(1);
 
     try args.add(.{
         .type = .Int,

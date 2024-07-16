@@ -3,6 +3,7 @@ const util = @import("../util/util.zig");
 
 const indexOfAnyPos = std.mem.indexOfAnyPos;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
+const print = std.debug.print;
 
 pub const Csv = struct {
     allocator: std.mem.Allocator,
@@ -10,11 +11,11 @@ pub const Csv = struct {
     delimiter: u8, // record delimiter
     cells: std.ArrayList(*Cell), // sparse list of parsed CSV cells
     enders: []u8, // characters that end a csv field
-    table: []?[]u8 = undefined, // holds CSV strings, if cell is empty it is null
+    table: []?[]u8 = undefined, // holds CSV string pointers
     curr_row: usize = 0, // current row when parsing
     curr_col: usize = 0, // current column when parsing
-    rows: usize = 0, // total number of row CSV file
-    cols: usize = 1, // maximum number of columns in a row (CSVs rows may be ragged)
+    rows: usize = 1, // total number of rows in CSV file
+    cols: usize = 0, // maximum number of columns in a row (CSVs rows may be ragged)
 
     pub fn init(config: struct {
         allocator: std.mem.Allocator,
@@ -65,56 +66,74 @@ pub const Csv = struct {
     }
 
     pub fn scan(self: *Csv, raw: []u8, buff_size: usize) !void {
-        if (buff_size == 0) return;
-        const size_m1 = buff_size - 1;
-        var start: usize = 0;
-        var end: usize = 0;
-
-        while (start < buff_size) {
-            if (raw[start] == self.delimiter) {
-                if (start == 0 or Csv.is_eol(raw[start - 1])) {
-                    self.next_col();
-                    // try self.add(raw[start..start]);
-                }
-                while (start < size_m1 and raw[start + 1] == self.delimiter) {
-                    self.next_col();
-                    // try self.add(raw[start..start]);
-                    start += 1; // Skip middle delimiter
-                }
-                if (start >= size_m1 or Csv.is_eol(raw[start + 1])) {
-                    self.next_col();
-                    start += 1; // Skip delimiter
-                    // try self.add(raw[start..start]);
-                    if (start < size_m1 and Csv.is_eol(raw[start])) start += 1;
-                }
-                start += 1; // Skip delimiter
-            } else if (Csv.is_eol(raw[start])) {
-                self.next_row();
-                start += 1; // Skip EOL
-                if (start < size_m1 and Csv.is_eol(raw[start])) start += 1; // Skip other EOL
-            } else if (raw[start] == '"') {
-                start += 1; // Skip starting quote
-                end = indexOfScalarPos(u8, raw, start, '"').?;
-                while (end < size_m1 and raw[end + 1] == '"') {
-                    end = indexOfScalarPos(u8, raw, end + 2, '"').?;
-                }
-                try self.add(raw[start..end]);
-                start = end + 1; // Skip ending quote
-            } else {
-                if (indexOfAnyPos(u8, raw, start, self.enders)) |e| {
-                    end = e;
-                    try self.add(raw[start..end]);
-                    start = end;
-                } else {
-                    try self.add(raw[start..buff_size]);
-                    break;
-                }
-            }
+        if (buff_size > 0) {
+            try self.parse(raw, buff_size);
         }
         try self.createTable();
     }
 
+    fn parse(self: *Csv, raw: []u8, buff_size: usize) !void {
+        const size_m1 = buff_size - 1;
+        var pos: usize = 0;
+
+        while (pos < buff_size) {
+            if (raw[pos] == self.delimiter) {
+                // Line starts with a comma, back fill a comma
+                if (pos == 0 or Csv.is_eol(raw[pos - 1])) {}
+                // Comma is followed by another comma, add columns for it
+                while (pos < size_m1 and raw[pos + 1] == self.delimiter) {
+                    self.next_col();
+                    pos += 1;
+                }
+                // Line ends with a comma, add a final comma
+                if (pos >= size_m1 or Csv.is_eol(raw[pos + 1])) {
+                    self.next_col();
+                    pos += 1;
+                } else {
+                    // Skip the current comma
+                    self.next_col();
+                    pos += 1;
+                }
+            } else if (Csv.is_eol(raw[pos])) {
+                // Skip passed the EOL
+                pos += 1;
+                if (pos < size_m1 and Csv.is_eol(raw[pos])) pos += 1;
+                if (pos < size_m1) self.next_row();
+            } else if (raw[pos] == '"') {
+                // Handle a quoted field
+                pos += 1; // Skip starting quote
+                var end = indexOfScalarPos(u8, raw, pos, '"').?;
+                while (end < size_m1 and raw[end + 1] == '"') {
+                    end = indexOfScalarPos(u8, raw, end + 2, '"').?;
+                }
+                try self.add(raw[pos..end]);
+                pos = end + 1; // Skip ending quote
+            } else {
+                // Handle a normal field, find the next field ending character
+                if (indexOfAnyPos(u8, raw, pos, self.enders)) |end| {
+                    try self.add(raw[pos..end]);
+                    pos = end;
+                } else {
+                    // Handle an EOF w/o a ending cr/lf
+                    try self.add(raw[pos..buff_size]);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn cell(self: Csv, row: usize, col: usize) ![]u8 {
+        if (row >= self.rows or col >= self.cols) {
+            const msg = "{!} max coordinates [{},{}] your coordinates [{},{}]\n";
+            std.log.err(msg, .{ CsvError.OutOfBounds, self.rows - 1, self.cols - 1, row, col });
+            return CsvError.OutOfBounds;
+        }
+        const idx = self.index(row, col);
+        return self.table[idx] orelse "";
+    }
+
     fn createTable(self: *Csv) !void {
+        self.cols_fixup();
         self.table = try self.allocator.alloc(?[]u8, self.table_size());
         for (0..self.table.len) |i| self.table[i] = null;
         for (self.cells.items) |item| {
@@ -148,11 +167,6 @@ pub const Csv = struct {
         try self.cells.append(ptr);
     }
 
-    pub fn cell(self: Csv, row: usize, col: usize) ![]u8 {
-        const idx = self.index(row, col);
-        return @as([]u8, self.table[idx].?);
-    }
-
     fn next_row(self: *Csv) void {
         self.curr_row += 1;
         self.curr_col = 0;
@@ -163,6 +177,10 @@ pub const Csv = struct {
         self.curr_col += 1;
         const col = self.curr_col + 1;
         if (col > self.cols) self.cols = col;
+    }
+
+    fn cols_fixup(self: *Csv) void {
+        if (self.rows > 0 and self.cols == 0) self.cols = 1;
     }
 
     fn table_size(self: Csv) usize {
@@ -180,3 +198,5 @@ pub const Csv = struct {
         val: []u8,
     };
 };
+
+const CsvError = error{OutOfBounds};
