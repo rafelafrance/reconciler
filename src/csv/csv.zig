@@ -78,29 +78,13 @@ pub const Csv = struct {
 
         while (pos < buff_size) {
             if (raw[pos] == self.delimiter) {
-                // Line starts with a comma, back fill a comma
-                if (pos == 0 or Csv.is_eol(raw[pos - 1])) {}
-                // Comma is followed by another comma, add columns for it
-                while (pos < size_m1 and raw[pos + 1] == self.delimiter) {
-                    self.next_col();
-                    pos += 1;
-                }
-                // Line ends with a comma, add a final comma
-                if (pos >= size_m1 or Csv.is_eol(raw[pos + 1])) {
-                    self.next_col();
-                    pos += 1;
-                } else {
-                    // Skip the current comma
-                    self.next_col();
-                    pos += 1;
-                }
+                self.next_col();
+                pos += 1; // skip delimiter
             } else if (Csv.is_eol(raw[pos])) {
-                // Skip passed the EOL
-                pos += 1;
-                if (pos < size_m1 and Csv.is_eol(raw[pos])) pos += 1;
+                pos += 1; // skip EOL
+                if (pos < size_m1 and Csv.is_eol(raw[pos])) pos += 1; // skip eol
                 if (pos < size_m1) self.next_row();
             } else if (raw[pos] == '"') {
-                // Handle a quoted field
                 pos += 1; // Skip starting quote
                 var end = indexOfScalarPos(u8, raw, pos, '"').?;
                 while (end < size_m1 and raw[end + 1] == '"') {
@@ -109,45 +93,15 @@ pub const Csv = struct {
                 try self.add(raw[pos..end]);
                 pos = end + 1; // Skip ending quote
             } else {
-                // Handle a normal field, find the next field ending character
                 if (indexOfAnyPos(u8, raw, pos, self.enders)) |end| {
                     try self.add(raw[pos..end]);
                     pos = end;
                 } else {
-                    // Handle an EOF w/o a ending cr/lf
                     try self.add(raw[pos..buff_size]);
                     break;
                 }
             }
         }
-    }
-
-    pub fn cell(self: Csv, row: usize, col: usize) ![]u8 {
-        if (row >= self.rows or col >= self.cols) {
-            const msg = "{!} max coordinates [{},{}] your coordinates [{},{}]\n";
-            std.log.err(msg, .{ CsvError.OutOfBounds, self.rows - 1, self.cols - 1, row, col });
-            return CsvError.OutOfBounds;
-        }
-        const idx = self.index(row, col);
-        return self.table[idx] orelse "";
-    }
-
-    fn createTable(self: *Csv) !void {
-        self.cols_fixup();
-        self.table = try self.allocator.alloc(?[]u8, self.table_size());
-        for (0..self.table.len) |i| self.table[i] = null;
-        for (self.cells.items) |item| {
-            self.table[self.index(item.row, item.col)] = item.val;
-        }
-    }
-
-    fn is_ender(self: Csv, char: u8) bool {
-        for (self.enders) |e| if (e == char) return true;
-        return false;
-    }
-
-    fn is_eol(char: u8) bool {
-        return char == '\r' or char == '\n';
     }
 
     fn add(self: *Csv, raw: []u8) !void {
@@ -167,6 +121,30 @@ pub const Csv = struct {
         try self.cells.append(ptr);
     }
 
+    pub fn cell(self: Csv, row: usize, col: usize) ![]u8 {
+        if (row >= self.rows or col >= self.cols) {
+            const msg = "{!} max coordinates [{},{}] your coordinates [{},{}]\n";
+            std.log.err(msg, .{ CsvError.OutOfBounds, self.rows - 1, self.cols - 1, row, col });
+            return CsvError.OutOfBounds;
+        }
+        const idx = self.index(row, col);
+        return self.table[idx] orelse "";
+    }
+
+    fn createTable(self: *Csv) !void {
+        if (self.rows > 0 and self.cols == 0) self.cols = 1; // Fix up single column CSVs
+        self.cols_fixup();
+        self.table = try self.allocator.alloc(?[]u8, self.rows * self.cols);
+        for (0..self.table.len) |i| self.table[i] = null;
+        for (self.cells.items) |item| {
+            self.table[self.index(item.row, item.col)] = item.val;
+        }
+    }
+
+    fn is_eol(char: u8) bool {
+        return char == '\r' or char == '\n';
+    }
+
     fn next_row(self: *Csv) void {
         self.curr_row += 1;
         self.curr_col = 0;
@@ -177,14 +155,6 @@ pub const Csv = struct {
         self.curr_col += 1;
         const col = self.curr_col + 1;
         if (col > self.cols) self.cols = col;
-    }
-
-    fn cols_fixup(self: *Csv) void {
-        if (self.rows > 0 and self.cols == 0) self.cols = 1;
-    }
-
-    fn table_size(self: Csv) usize {
-        return self.rows * self.cols;
     }
 
     fn index(self: Csv, row: usize, col: usize) usize {
