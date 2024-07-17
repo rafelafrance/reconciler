@@ -3,12 +3,12 @@ const std = @import("std");
 pub const Csv = struct {
     allocator: std.mem.Allocator,
     delimiter: u8, // record delimiter
+    table: []?[]u8 = undefined, // holds CSV string pointers. This is the payload
     raw_cells: std.ArrayList(*RawCell), // sparse list of parsed CSV cells
-    table: []?[]u8 = undefined, // holds CSV string pointers
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
     cols: usize = 0, // maximum number of columns in a row (CSVs rows may be ragged)
-    curr_row: usize = 0, // current row when parsing
-    curr_col: usize = 0, // current column when parsing
+    curr_row: usize = 0, // current row when parsing TODO: Move this out of here
+    curr_col: usize = 0, // current column when parsing TODO: Move this out of here
 
     pub fn init(config: struct {
         allocator: std.mem.Allocator,
@@ -47,10 +47,11 @@ pub const Csv = struct {
         return null;
     }
 
+    // TODO: Handle multiple parses i.e. calls to this function. Maybe it's an error?
     pub fn parseString(self: *Csv, str: []u8) !void {
-        const size_m1 = if (str.len > 0) str.len - 1 else 0;
+        const last_idx = if (str.len > 0) str.len - 1 else 0;
         const array = [_]u8{ self.delimiter, '\r', '\n' };
-        const enders = array[0..]; // Chars that end a cell
+        const enders = array[0..]; // Chars at the end a cell (I handle eof separately)
         var pos: usize = 0;
 
         while (pos < str.len) {
@@ -59,22 +60,22 @@ pub const Csv = struct {
                 self.nextCol();
             } else if (Csv.isEol(str[pos])) {
                 pos += 1; // skip eol
-                if (pos < size_m1 and Csv.isEol(str[pos])) pos += 1; // skip eol
-                if (pos < size_m1) self.nextRow();
+                if (pos < last_idx and Csv.isEol(str[pos]) and str[pos - 1] != str[pos]) pos += 1; // skip eol
+                if (pos < last_idx) self.nextRow();
             } else if (str[pos] == '"') {
                 pos += 1; // skip starting quote
                 var end = std.mem.indexOfScalarPos(u8, str, pos, '"').?;
-                while (end < size_m1 and str[end + 1] == '"') {
+                while (end < last_idx and str[end + 1] == '"') {
                     end = std.mem.indexOfScalarPos(u8, str, end + 2, '"').?;
                 }
-                try self.appendCell(str[pos..end]);
+                try self.appendRawCell(str[pos..end]);
                 pos = end + 1; // skip ending quote
             } else {
                 if (std.mem.indexOfAnyPos(u8, str, pos, enders)) |end| {
-                    try self.appendCell(str[pos..end]);
+                    try self.appendRawCell(str[pos..end]);
                     pos = end;
                 } else {
-                    try self.appendCell(str[pos..str.len]);
+                    try self.appendRawCell(str[pos..str.len]);
                     pos = str.len;
                 }
             }
@@ -82,7 +83,7 @@ pub const Csv = struct {
         try self.createTable();
     }
 
-    fn appendCell(self: *Csv, raw: []u8) !void {
+    fn appendRawCell(self: *Csv, raw: []u8) !void {
         const ptr = try self.allocator.create(RawCell);
 
         const buff = try self.allocator.alloc(u8, raw.len);

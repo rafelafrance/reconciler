@@ -120,6 +120,25 @@ test "it handles ragged rows" {
     try expect(eql(u8, try csv.cellValue(1, 1), ""));
     try expect(eql(u8, try csv.cellValue(1, 2), ""));
 }
+test "it handles empty rows" {
+    const allocator = std.testing.allocator;
+    var csv = try csv_.Csv.init(.{ .allocator = allocator });
+    defer csv.deinit();
+
+    const target: []u8 = @constCast("zero,one\r\n" ++ "\n" ++ "\n" ++ "two");
+    try csv.parseString(target);
+
+    try expect(csv.rows == 4);
+    try expect(csv.cols == 2);
+    try expect(eql(u8, try csv.cellValue(0, 0), "zero"));
+    try expect(eql(u8, try csv.cellValue(0, 1), "one"));
+    try expect(eql(u8, try csv.cellValue(1, 0), ""));
+    try expect(eql(u8, try csv.cellValue(1, 1), ""));
+    try expect(eql(u8, try csv.cellValue(2, 0), ""));
+    try expect(eql(u8, try csv.cellValue(2, 1), ""));
+    try expect(eql(u8, try csv.cellValue(3, 0), "two"));
+    try expect(eql(u8, try csv.cellValue(3, 1), ""));
+}
 test "it finds values in a row" {
     const allocator = std.testing.allocator;
     var csv = try csv_.Csv.init(.{ .allocator = allocator });
