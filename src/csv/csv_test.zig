@@ -155,21 +155,6 @@ test "it finds values in a row" {
     try expect(try csv.firstInRow(1, @constCast("four")) == null);
     try expect(try csv.firstInRow(1, @constCast("five")) == 2);
 }
-test "it trims spaces" {
-    const allocator = std.testing.allocator;
-    var csv = try csv_.Csv.init(.{ .allocator = allocator });
-    defer csv.deinit();
-
-    const target: []u8 = @constCast(" zero , one, two ,\" three \"");
-    try csv.parseString(target);
-
-    try expect(csv.rows == 1);
-    try expect(csv.cols == 4);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
-    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(0, 3)).?, " three "));
-}
 test "it handles different delimiters" {
     const allocator = std.testing.allocator;
     var csv = try csv_.Csv.init(.{ .allocator = allocator, .delimiter = '\t' });
@@ -185,7 +170,7 @@ test "it handles different delimiters" {
     try expect(eql(u8, (try csv.cellValue(1, 0)).?, "two"));
     try expect(eql(u8, (try csv.cellValue(1, 1)).?, "three"));
 }
-test "You may call parse more than once" {
+test "you may call parse more than once" {
     const allocator = std.testing.allocator;
     var csv = try csv_.Csv.init(.{ .allocator = allocator });
     defer csv.deinit();
@@ -215,19 +200,46 @@ test "You may call parse more than once" {
     try expect(eql(u8, (try csv.cellValue(0, 1)).?, "five"));
     try expect(eql(u8, (try csv.cellValue(0, 2)).?, "six"));
 }
-test "Handle quotes surrounded by spaces" {
-    // Currently, I'm just treating this as a regular cell.
-    // Another, more complicated, option is to treat the quoted part as a quoted string.
-    // I'm not sure if this is the best way to handle this, but it works for now.
-    //
+test "it trims spaces" {
     const allocator = std.testing.allocator;
     var csv = try csv_.Csv.init(.{ .allocator = allocator });
     defer csv.deinit();
 
-    const target: []u8 = @constCast(" \"zero\"  ");
+    const target: []u8 = @constCast(" zero , one, two ,\" three \"");
+    try csv.parseString(target);
+
+    try expect(csv.rows == 1);
+    try expect(csv.cols == 4);
+    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
+    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
+    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "two"));
+    try expect(eql(u8, (try csv.cellValue(0, 3)).?, " three "));
+}
+test "it handles spaces around quoted fields" {
+    const allocator = std.testing.allocator;
+    var csv = try csv_.Csv.init(.{ .allocator = allocator });
+    defer csv.deinit();
+
+    const target: []u8 = @constCast(" \" zero\"  ," ++ "\"one \" \n" ++ " \" two \" ," ++ "  ");
+    try csv.parseString(target);
+
+    try expect(csv.rows == 2);
+    try expect(csv.cols == 2);
+    try expect(eql(u8, (try csv.cellValue(0, 0)).?, " zero"));
+    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one "));
+    try expect(eql(u8, (try csv.cellValue(1, 0)).?, " two "));
+    try expect(try csv.cellValue(1, 1) == null);
+}
+test "let's see what it does with broken quoted fields" {
+    const allocator = std.testing.allocator;
+    var csv = try csv_.Csv.init(.{ .allocator = allocator });
+    defer csv.deinit();
+
+    const target: []u8 = @constCast("\"zero ,\n ");
     try csv.parseString(target);
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 1);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "\"zero\""));
+    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero ,\n "));
+    try expect(try csv.cellValue(1, 1) == null);
 }

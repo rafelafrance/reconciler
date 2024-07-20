@@ -1,14 +1,14 @@
 //! This is a minimal CSV parser library.
-//! Input a string and parse it into rows and cells.
-//! Output a grid/rectangle of string pointers ?[]u8.
-//! I try not to deviate from RFC 4180
+//! Input a string and parse it into rows and columns.
+//! Output a grid/rectangle of string slice pointers ?[]u8.
+//! I try not to deviate from RFC 4180, and handle some weird stuff that I've seen.
 
 const std = @import("std");
 
 pub const Csv = struct {
     allocator: std.mem.Allocator,
     delimiter: u8, // record delimiter
-    table: []?[]u8 = undefined, // holds CSV string pointers. This is the payload
+    table: []?[]u8 = undefined, // holds CSV string slice pointers. This is the payload
     raw_cells: std.ArrayList(*RawCell), // list of parsed CSV cells. blank cell/rows are skipped
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
     cols: usize = 0, // maximum number of columns in a row (CSVs rows may be ragged)
@@ -34,33 +34,16 @@ pub const Csv = struct {
         self.raw_cells.deinit();
     }
 
-    fn clear(self: *Csv) void {
-        self.rows = 1;
-        self.cols = 0;
-
-        if (self.dirty) self.allocator.free(self.table);
-
-        for (self.raw_cells.items) |item| {
-            self.allocator.free(item.buff);
-            self.allocator.destroy(item);
-        }
-        self.raw_cells.clearAndFree();
-        self.dirty = true;
-    }
-
     /// Get the contents of a cell.
     pub fn cellValue(self: Csv, row: usize, col: usize) !?[]u8 {
-        if (row >= self.rows or col >= self.cols) {
-            const msg = "{!}: max coordinates [{},{}] your coordinates [{},{}]\n";
-            std.log.err(msg, .{ CsvError.OutOfBounds, self.rows - 1, self.cols - 1, row, col });
-            return CsvError.OutOfBounds;
-        }
+        if (!self.inBounds(row, col)) return null;
         return self.table[self.index(row, col)];
     }
 
     /// Find the first occurrence of the given string in a row and return its index.
-    /// I use this for looking for headers.
+    /// I use this to look for headers.
     pub fn firstInRow(self: Csv, row: usize, value: []u8) !?usize {
+        // A hashMap here seems like overkils and maybe slower (untested)
         for (0..self.cols) |col| {
             const cell_value = try self.cellValue(row, col) orelse continue;
             if (std.mem.eql(u8, cell_value, value)) return col;
@@ -86,36 +69,28 @@ pub const Csv = struct {
                 coords.nextCol(self);
             } else if (Csv.isEol(str[pos])) {
                 pos += 1; // skip eol
-                if (pos < last_idx and Csv.isEol(str[pos]) and str[pos - 1] != str[pos]) pos += 1; // skip eol
-                if (pos < last_idx) coords.nextRow(self);
+                if (pos < last_idx) {
+                    if (Csv.isEol(str[pos]) and str[pos - 1] != str[pos]) pos += 1; // skip eol
+                    coords.nextRow(self);
+                }
+            } else if (str[pos] == ' ') {
+                pos = std.mem.indexOfNonePos(u8, str, pos, " ") orelse str.len;
             } else if (str[pos] == '"') {
                 pos += 1; // skip starting quote
-                var end = std.mem.indexOfScalarPos(u8, str, pos, '"').?;
+                var end = std.mem.indexOfScalarPos(u8, str, pos, '"') orelse str.len;
                 while (end < last_idx and str[end + 1] == '"') {
                     end = std.mem.indexOfScalarPos(u8, str, end + 2, '"').?;
                 }
                 try self.appendRawCell(str[pos..end], coords, true);
                 pos = end + 1; // skip ending quote
             } else {
-                if (std.mem.indexOfAnyPos(u8, str, pos, enders)) |end| {
-                    try self.appendRawCell(str[pos..end], coords, false);
-                    pos = end;
-                } else {
-                    try self.appendRawCell(str[pos..str.len], coords, false);
-                    pos = str.len;
-                }
+                const end = std.mem.indexOfAnyPos(u8, str, pos, enders) orelse str.len;
+                try self.appendRawCell(str[pos..end], coords, false);
+                pos = end; // skip passed field
             }
         }
         Coords.finish(self);
         try self.createTable();
-    }
-
-    fn createTable(self: *Csv) !void {
-        self.table = try self.allocator.alloc(?[]u8, self.rows * self.cols);
-        for (0..self.table.len) |i| self.table[i] = null;
-        for (self.raw_cells.items) |item| {
-            self.table[self.index(item.row, item.col)] = item.val;
-        }
     }
 
     fn appendRawCell(self: *Csv, raw: []u8, coords: Coords, quoted: bool) !void {
@@ -127,7 +102,7 @@ pub const Csv = struct {
 
         var trimmed: []u8 = undefined;
         if (!quoted) {
-            trimmed = @constCast(std.mem.trim(u8, buff[0..len], " "));
+            trimmed = @constCast(std.mem.trimRight(u8, buff[0..len], " "));
         }
 
         cell.* = RawCell{
@@ -138,6 +113,32 @@ pub const Csv = struct {
         };
 
         try self.raw_cells.append(cell);
+    }
+
+    fn createTable(self: *Csv) !void {
+        self.table = try self.allocator.alloc(?[]u8, self.rows * self.cols);
+        for (0..self.table.len) |i| self.table[i] = null;
+        // for (self.table) |cell| cell = null;
+        for (self.raw_cells.items) |item| {
+            self.table[self.index(item.row, item.col)] = item.val;
+        }
+    }
+
+    fn clear(self: *Csv) void {
+        if (self.dirty) {
+            self.rows = 1;
+            self.cols = 0;
+
+            self.allocator.free(self.table);
+
+            for (self.raw_cells.items) |item| {
+                self.allocator.free(item.buff);
+                self.allocator.destroy(item);
+            }
+            self.raw_cells.clearRetainingCapacity();
+        }
+
+        self.dirty = true;
     }
 
     inline fn isEol(char: u8) bool {
