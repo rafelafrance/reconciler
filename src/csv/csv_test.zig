@@ -15,11 +15,11 @@ test "test various line endings" {
 
     try expect(csv.rows == 5);
     try expect(csv.cols == 1);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(1, 0)).?, "one"));
-    try expect(eql(u8, (try csv.cellValue(2, 0)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(3, 0)).?, "three"));
-    try expect(eql(u8, (try csv.cellValue(4, 0)).?, "four"));
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(1, 0).?, "one"));
+    try expect(eql(u8, csv.get(2, 0).?, "two"));
+    try expect(eql(u8, csv.get(3, 0).?, "three"));
+    try expect(eql(u8, csv.get(4, 0).?, "four"));
 }
 test "it handles an eol at the end of the file" {
     const allocator = std.testing.allocator;
@@ -31,7 +31,7 @@ test "it handles an eol at the end of the file" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 1);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
 }
 test "it handles quotes" {
     const allocator = std.testing.allocator;
@@ -43,10 +43,10 @@ test "it handles quotes" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 4);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "\"zero\""));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "\""));
-    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "\"\""));
-    try expect(eql(u8, (try csv.cellValue(0, 3)).?, "th\"re\"e"));
+    try expect(eql(u8, csv.get(0, 0).?, "\"zero\""));
+    try expect(eql(u8, csv.get(0, 1).?, "\""));
+    try expect(eql(u8, csv.get(0, 2).?, "\"\""));
+    try expect(eql(u8, csv.get(0, 3).?, "th\"re\"e"));
 }
 test "it handles an empty string" {
     const allocator = std.testing.allocator;
@@ -58,7 +58,7 @@ test "it handles an empty string" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 1);
-    try expect(try csv.cellValue(0, 0) == null);
+    try expect(csv.get(0, 0) == null);
 }
 test "it handles empty cells" {
     const allocator = std.testing.allocator;
@@ -70,12 +70,12 @@ test "it handles empty cells" {
 
     try expect(csv.rows == 2);
     try expect(csv.cols == 3);
-    try expect(try csv.cellValue(0, 0) == null);
-    try expect(try csv.cellValue(0, 1) == null);
-    try expect(try csv.cellValue(0, 2) == null);
-    try expect(try csv.cellValue(1, 0) == null);
-    try expect(try csv.cellValue(1, 1) == null);
-    try expect(try csv.cellValue(1, 2) == null);
+    try expect(csv.get(0, 0) == null);
+    try expect(csv.get(0, 1) == null);
+    try expect(csv.get(0, 2) == null);
+    try expect(csv.get(1, 0) == null);
+    try expect(csv.get(1, 1) == null);
+    try expect(csv.get(1, 2) == null);
 }
 test "it handles empty cells part2" {
     const allocator = std.testing.allocator;
@@ -87,9 +87,9 @@ test "it handles empty cells part2" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 3);
-    try expect(try csv.cellValue(0, 0) == null);
-    try expect(try csv.cellValue(0, 1) == null);
-    try expect(try csv.cellValue(0, 2) == null);
+    try expect(csv.get(0, 0) == null);
+    try expect(csv.get(0, 1) == null);
+    try expect(csv.get(0, 2) == null);
 }
 test "it handles eols and commas inside of quotes" {
     const allocator = std.testing.allocator;
@@ -101,7 +101,7 @@ test "it handles eols and commas inside of quotes" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 1);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, ",\n,\r\n"));
+    try expect(eql(u8, csv.get(0, 0).?, ",\n,\r\n"));
 }
 test "it handles ragged rows" {
     const allocator = std.testing.allocator;
@@ -113,12 +113,12 @@ test "it handles ragged rows" {
 
     try expect(csv.rows == 2);
     try expect(csv.cols == 3);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
-    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(1, 0)).?, "three"));
-    try expect(try csv.cellValue(1, 1) == null);
-    try expect(try csv.cellValue(1, 2) == null);
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one"));
+    try expect(eql(u8, csv.get(0, 2).?, "two"));
+    try expect(eql(u8, csv.get(1, 0).?, "three"));
+    try expect(csv.get(1, 1) == null);
+    try expect(csv.get(1, 2) == null);
 }
 test "it handles empty rows" {
     const allocator = std.testing.allocator;
@@ -130,14 +130,14 @@ test "it handles empty rows" {
 
     try expect(csv.rows == 4);
     try expect(csv.cols == 2);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
-    try expect(try csv.cellValue(1, 0) == null);
-    try expect(try csv.cellValue(1, 1) == null);
-    try expect(try csv.cellValue(2, 0) == null);
-    try expect(try csv.cellValue(2, 1) == null);
-    try expect(eql(u8, (try csv.cellValue(3, 0)).?, "two"));
-    try expect(try csv.cellValue(3, 1) == null);
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one"));
+    try expect(csv.get(1, 0) == null);
+    try expect(csv.get(1, 1) == null);
+    try expect(csv.get(2, 0) == null);
+    try expect(csv.get(2, 1) == null);
+    try expect(eql(u8, csv.get(3, 0).?, "two"));
+    try expect(csv.get(3, 1) == null);
 }
 test "it finds values in a row" {
     const allocator = std.testing.allocator;
@@ -147,13 +147,13 @@ test "it finds values in a row" {
     const target: []u8 = @constCast("zero,one,\r\n" ++ "three,,five");
     try csv.parseString(target);
 
-    try expect(try csv.firstInRow(0, @constCast("zero")) == 0);
-    try expect(try csv.firstInRow(0, @constCast("one")) == 1);
-    try expect(try csv.firstInRow(0, @constCast("two")) == null);
-    try expect(try csv.firstInRow(0, @constCast("three")) == null);
-    try expect(try csv.firstInRow(1, @constCast("three")) == 0);
-    try expect(try csv.firstInRow(1, @constCast("four")) == null);
-    try expect(try csv.firstInRow(1, @constCast("five")) == 2);
+    try expect(csv.firstInRow(0, @constCast("zero")) == 0);
+    try expect(csv.firstInRow(0, @constCast("one")) == 1);
+    try expect(csv.firstInRow(0, @constCast("two")) == null);
+    try expect(csv.firstInRow(0, @constCast("three")) == null);
+    try expect(csv.firstInRow(1, @constCast("three")) == 0);
+    try expect(csv.firstInRow(1, @constCast("four")) == null);
+    try expect(csv.firstInRow(1, @constCast("five")) == 2);
 }
 test "it handles different delimiters" {
     const allocator = std.testing.allocator;
@@ -165,10 +165,10 @@ test "it handles different delimiters" {
 
     try expect(csv.rows == 2);
     try expect(csv.cols == 2);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
-    try expect(eql(u8, (try csv.cellValue(1, 0)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(1, 1)).?, "three"));
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one"));
+    try expect(eql(u8, csv.get(1, 0).?, "two"));
+    try expect(eql(u8, csv.get(1, 1).?, "three"));
 }
 test "you may call parse more than once" {
     const allocator = std.testing.allocator;
@@ -180,25 +180,25 @@ test "you may call parse more than once" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 2);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one"));
 
     const target1: []u8 = @constCast("two," ++ "three\n");
     try csv.parseString(target1);
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 2);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "three"));
+    try expect(eql(u8, csv.get(0, 0).?, "two"));
+    try expect(eql(u8, csv.get(0, 1).?, "three"));
 
     const target2: []u8 = @constCast("four," ++ "five," ++ "six");
     try csv.parseString(target2);
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 3);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "four"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "five"));
-    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "six"));
+    try expect(eql(u8, csv.get(0, 0).?, "four"));
+    try expect(eql(u8, csv.get(0, 1).?, "five"));
+    try expect(eql(u8, csv.get(0, 2).?, "six"));
 }
 test "it trims spaces" {
     const allocator = std.testing.allocator;
@@ -210,10 +210,10 @@ test "it trims spaces" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 4);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one"));
-    try expect(eql(u8, (try csv.cellValue(0, 2)).?, "two"));
-    try expect(eql(u8, (try csv.cellValue(0, 3)).?, " three "));
+    try expect(eql(u8, csv.get(0, 0).?, "zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one"));
+    try expect(eql(u8, csv.get(0, 2).?, "two"));
+    try expect(eql(u8, csv.get(0, 3).?, " three "));
 }
 test "it handles spaces around quoted fields" {
     const allocator = std.testing.allocator;
@@ -225,10 +225,10 @@ test "it handles spaces around quoted fields" {
 
     try expect(csv.rows == 2);
     try expect(csv.cols == 2);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, " zero"));
-    try expect(eql(u8, (try csv.cellValue(0, 1)).?, "one "));
-    try expect(eql(u8, (try csv.cellValue(1, 0)).?, " two "));
-    try expect(try csv.cellValue(1, 1) == null);
+    try expect(eql(u8, csv.get(0, 0).?, " zero"));
+    try expect(eql(u8, csv.get(0, 1).?, "one "));
+    try expect(eql(u8, csv.get(1, 0).?, " two "));
+    try expect(csv.get(1, 1) == null);
 }
 test "let's see what it does with broken quoted fields" {
     const allocator = std.testing.allocator;
@@ -240,6 +240,6 @@ test "let's see what it does with broken quoted fields" {
 
     try expect(csv.rows == 1);
     try expect(csv.cols == 1);
-    try expect(eql(u8, (try csv.cellValue(0, 0)).?, "zero ,\n "));
-    try expect(try csv.cellValue(1, 1) == null);
+    try expect(eql(u8, csv.get(0, 0).?, "zero ,\n "));
+    try expect(csv.get(1, 1) == null);
 }

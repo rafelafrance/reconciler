@@ -28,24 +28,24 @@ pub const Nfn = struct {
         }
 
         nfn.workflow_id = try nfn.get_workflow_id();
-        nfn.workflow_name = (try nfn.csv.firstInRow(0, @constCast("workflow_name"))).?;
+        nfn.workflow_name = nfn.csv.firstInRow(0, @constCast("workflow_name")).?;
         return nfn;
     }
 
     pub fn deinit() void {}
 
     fn get_workflow_id(self: Nfn) !usize {
-        const idx = self.csv.firstInRow(0, @constCast("workflow_id")) catch null;
+        const idx = self.csv.firstInRow(0, @constCast("workflow_id"));
         if (idx == null) {
             std.log.err("The CSV file is missing a 'workflow_id' column, it is not in Nfn format.\n", .{});
             return NfnError.WrongCsvType;
         }
 
         const col = idx.?;
-        const workflow_id = try self.csv.cellValue(1, col);
+        const workflow_id = self.csv.get(1, col).?;
 
         for (2..self.csv.rows) |row| {
-            if (!eql(u8, (try self.csv.cellValue(row, col)).?, workflow_id.?)) {
+            if (!eql(u8, self.csv.get(row, col).?, workflow_id)) {
                 std.log.err("There are multiple workflow_ids in this CSV.", .{});
                 return NfnError.MultipleWorkflows;
             }

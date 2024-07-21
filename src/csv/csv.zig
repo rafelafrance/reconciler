@@ -1,6 +1,6 @@
 //! This is a minimal CSV parser library.
 //! Input a string and parse it into rows and columns.
-//! Output a grid/rectangle of string slice pointers ?[]u8.
+//! Output a grid/rectangle of optional slice pointers.
 //! I try not to deviate from RFC 4180, and handle some weird stuff that I've seen.
 
 const std = @import("std");
@@ -11,8 +11,8 @@ pub const Csv = struct {
     table: []?[]u8 = undefined, // holds CSV string slice pointers. This is the payload
     raw_cells: std.ArrayList(*RawCell), // list of parsed CSV cells. blank cell/rows are skipped
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
-    cols: usize = 0, // maximum number of columns in a row (CSVs rows may be ragged)
-    dirty: bool = false,
+    cols: usize = 1, // maximum number of columns in a row (CSVs rows may be ragged)
+    dirty: bool = false, // used with repeated calls to parse()
 
     pub fn init(config: struct {
         allocator: std.mem.Allocator,
@@ -34,25 +34,32 @@ pub const Csv = struct {
         self.raw_cells.deinit();
     }
 
+    pub inline fn index(self: Csv, row: usize, col: usize) usize {
+        return row * self.cols + col;
+    }
+
+    pub inline fn inBounds(self: Csv, row: usize, col: usize) bool {
+        return row < self.rows and col < self.cols;
+    }
+
     /// Get the contents of a cell.
-    pub fn cellValue(self: Csv, row: usize, col: usize) !?[]u8 {
+    pub fn get(self: Csv, row: usize, col: usize) ?[]u8 {
         if (!self.inBounds(row, col)) return null;
         return self.table[self.index(row, col)];
     }
 
     /// Find the first occurrence of the given string in a row and return its index.
     /// I use this to look for headers.
-    pub fn firstInRow(self: Csv, row: usize, value: []u8) !?usize {
-        // A hashMap here seems like overkils and maybe slower (untested)
+    pub fn firstInRow(self: Csv, row: usize, value: []u8) ?usize {
         for (0..self.cols) |col| {
-            const cell_value = try self.cellValue(row, col) orelse continue;
+            const cell_value = self.get(row, col) orelse continue;
             if (std.mem.eql(u8, cell_value, value)) return col;
         }
         return null;
     }
 
     // Convert a string into a CSV table.
-    // A table is nothing more than a grid of optional string pointers, []?[]u8.
+    // A table is nothing more than a grid of optional string slices.
     pub fn parseString(self: *Csv, str: []u8) !void {
         self.clear();
         const last_idx = if (str.len > 0) str.len - 1 else 0;
@@ -89,7 +96,6 @@ pub const Csv = struct {
                 pos = end; // skip passed field
             }
         }
-        Coords.finish(self);
         try self.createTable();
     }
 
@@ -98,18 +104,13 @@ pub const Csv = struct {
 
         var buff = try self.allocator.alloc(u8, raw.len);
         const n = std.mem.replace(u8, raw, "\"\"", "\"", buff);
-        const len = raw.len - n;
-
-        var trimmed: []u8 = undefined;
-        if (!quoted) {
-            trimmed = @constCast(std.mem.trimRight(u8, buff[0..len], " "));
-        }
+        const slice = buff[0 .. raw.len - n];
 
         cell.* = RawCell{
             .row = coords.row,
             .col = coords.col,
             .buff = buff,
-            .val = if (quoted) buff[0..len] else trimmed,
+            .val = if (quoted) slice else @constCast(std.mem.trimRight(u8, slice, " ")),
         };
 
         try self.raw_cells.append(cell);
@@ -117,8 +118,7 @@ pub const Csv = struct {
 
     fn createTable(self: *Csv) !void {
         self.table = try self.allocator.alloc(?[]u8, self.rows * self.cols);
-        for (0..self.table.len) |i| self.table[i] = null;
-        // for (self.table) |cell| cell = null;
+        for (self.table) |*cell| cell.* = null;
         for (self.raw_cells.items) |item| {
             self.table[self.index(item.row, item.col)] = item.val;
         }
@@ -127,7 +127,7 @@ pub const Csv = struct {
     fn clear(self: *Csv) void {
         if (self.dirty) {
             self.rows = 1;
-            self.cols = 0;
+            self.cols = 1;
 
             self.allocator.free(self.table);
 
@@ -145,14 +145,6 @@ pub const Csv = struct {
         return char == '\r' or char == '\n';
     }
 
-    inline fn index(self: Csv, row: usize, col: usize) usize {
-        return row * self.cols + col;
-    }
-
-    inline fn inBounds(self: Csv, row: usize, col: usize) bool {
-        return row < self.rows and col < self.cols;
-    }
-
     const Coords = struct {
         row: usize = 0,
         col: usize = 0,
@@ -167,11 +159,6 @@ pub const Csv = struct {
             self.col += 1;
             const col = self.col + 1;
             if (col > csv.cols) csv.cols = col;
-        }
-
-        fn finish(csv: *Csv) void {
-            // Fix single column CSVs
-            if (csv.rows > 0 and csv.cols == 0) csv.cols = 1;
         }
     };
 
