@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Args = struct {
+pub const ArgParser = struct {
     allocator: std.mem.Allocator,
     header: []const u8,
     footer: []const u8,
@@ -12,7 +12,7 @@ pub const Args = struct {
         allocator: std.mem.Allocator,
         header: []const u8 = "",
         footer: []const u8 = "",
-    }) !Args {
+    }) !ArgParser {
         return .{
             .allocator = config.allocator,
             .header = config.header,
@@ -23,7 +23,7 @@ pub const Args = struct {
         };
     }
 
-    pub fn add(self: *Args, config: struct {
+    pub fn add(self: *ArgParser, config: struct {
         type: ArgType,
         named: bool = true,
         name: []const u8 = "",
@@ -49,7 +49,7 @@ pub const Args = struct {
         if (ptr.named) try self.names.put(ptr.name, ptr);
     }
 
-    pub fn deinit(self: *Args) void {
+    pub fn deinit(self: *ArgParser) void {
         self.names.deinit();
         self.values.deinit();
 
@@ -57,13 +57,13 @@ pub const Args = struct {
         self.specs.deinit();
     }
 
-    pub fn parse(self: *Args) !void {
+    pub fn parse(self: *ArgParser) !void {
         const args = try std.process.argsAlloc(self.allocator);
         defer std.process.argsFree(self.allocator, args);
         try self.parseStrings(args);
     }
 
-    pub fn parseStrings(self: *Args, args: []const []const u8) !void {
+    pub fn parseStrings(self: *ArgParser, args: []const []const u8) !void {
         var state: ArgState = .arg_expected;
         var spec: *const ArgSpec = undefined;
         var name: []const u8 = undefined;
@@ -131,3 +131,49 @@ pub const ArgValue = union {
 pub const ArgType = enum { Int, Float, Bool, String };
 pub const ArgAction = enum { store, append, store_true, store_false, count };
 pub const ArgError = error{InvalidBool};
+
+// #####################################################################################
+// tests
+// #####################################################################################
+//
+const expect = std.testing.expect;
+
+fn initParser(allocator: std.mem.Allocator) !ArgParser {
+    var parser = try ArgParser.init(.{
+        .allocator = allocator,
+        .header = "Testing",
+    });
+    try parser.add(.{
+        .type = .Int,
+        .default = ArgValue{ .int = 42 },
+        .name = "-test",
+    });
+    return parser;
+}
+
+test "happy happy" {
+    const allocator = std.testing.allocator;
+    var parser = try initParser(allocator);
+    defer parser.deinit();
+}
+
+test "parse an int" {
+    const allocator = std.testing.allocator;
+    var parser = try initParser(allocator);
+    defer parser.deinit();
+
+    const args: []const []const u8 = &.{ "prog", "-test", "420" };
+    try parser.parseStrings(args);
+
+    const actual = parser.values.get("-test").?.int;
+    try expect(actual == 420);
+}
+
+test "parse an invalid int" {
+    const allocator = std.testing.allocator;
+    var parser = try initParser(allocator);
+    defer parser.deinit();
+
+    const args: []const []const u8 = &.{ "prog", "-test", "bad20" };
+    try std.testing.expectError(error.InvalidCharacter, parser.parseStrings(args));
+}

@@ -1,8 +1,8 @@
 const std = @import("std");
 
 test {
-    _ = @import("args/arg_tests.zig");
-    _ = @import("csv/csv_test.zig");
-    _ = @import("nfn/nfn_test.zig");
-    _ = @import("util/util_test.zig");
+    _ = @import("arg_parser.zig");
+    _ = @import("csv_parser.zig");
+    _ = @import("nfn_parser.zig");
+    _ = @import("util.zig");
 }
