@@ -89,13 +89,13 @@ pub const ArgParser = struct {
                 const value = switch (spec.type) {
                     ArgType.Int => ArgValue{
                         .int = std.fmt.parseInt(i64, str, 0) catch |err| {
-                            const msg = "{!} when processing arg = '{s}' and value = '{s}'\n";
+                            const msg = "{!} when processing type = 'int' arg = '{s}' and value = '{s}'\n";
                             std.log.err(msg, .{ err, name, str });
                             return err;
                         },
                     },
                     ArgType.Float => ArgValue{ .float = std.fmt.parseFloat(f64, str) catch |err| {
-                        const msg = "{!} when processing arg = '{s}' and value = '{s}'\n";
+                        const msg = "{!} when processing type = 'float' arg = '{s}' and value = '{s}'\n";
                         std.log.err(msg, .{ err, name, str });
                         return err;
                     } },
