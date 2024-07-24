@@ -9,7 +9,7 @@ pub const CsvParser = struct {
     allocator: std.mem.Allocator,
     delimiter: u8, // record delimiter
     table: [][]?[]u8 = undefined, // holds CSV string slice pointers. This is the payload
-    raw_cells: std.ArrayList(*RawCell), // list of parsed CSV cells. blank cell/rows are skipped
+    raw_cells: std.SegmentedList(*RawCell, 256), // list of parsed CSV cells. blank cell/rows are skipped
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
     cols: usize = 1, // maximum number of columns in a row (CSVs rows may be ragged)
     dirty: bool = false, // used with repeated calls to parse()
@@ -21,13 +21,13 @@ pub const CsvParser = struct {
         return CsvParser{
             .allocator = config.allocator,
             .delimiter = config.delimiter,
-            .raw_cells = std.ArrayList(*RawCell).init(config.allocator),
+            .raw_cells = std.SegmentedList(*RawCell, 256){},
         };
     }
 
     pub fn deinit(self: *CsvParser) void {
         self.partialDeinit();
-        self.raw_cells.deinit();
+        self.raw_cells.deinit(self.allocator);
     }
 
     pub inline fn inBounds(self: CsvParser, row: usize, col: usize) bool {
@@ -99,7 +99,7 @@ pub const CsvParser = struct {
             .val = if (quoted) slice else @constCast(std.mem.trimRight(u8, slice, " ")),
         };
 
-        try self.raw_cells.append(cell);
+        try self.raw_cells.append(self.allocator, cell);
     }
 
     fn createTable(self: *CsvParser) !void {
@@ -108,8 +108,9 @@ pub const CsvParser = struct {
             self.table[r] = try self.allocator.alloc(?[]u8, self.cols);
             for (self.table[r]) |*cell| cell.* = null;
         }
-        for (self.raw_cells.items) |item| {
-            self.table[item.row][item.col] = item.val;
+        var iter = self.raw_cells.iterator(0);
+        while (iter.next()) |item| {
+            self.table[item.*.row][item.*.col] = item.*.val;
         }
     }
 
@@ -117,9 +118,10 @@ pub const CsvParser = struct {
         for (self.table) |*row| self.allocator.free(row.*);
         self.allocator.free(self.table);
 
-        for (self.raw_cells.items) |item| {
-            self.allocator.free(item.buff);
-            self.allocator.destroy(item);
+        var iter = self.raw_cells.iterator(0);
+        while (iter.next()) |item| {
+            self.allocator.free(item.*.buff);
+            self.allocator.destroy(item.*);
         }
     }
 
