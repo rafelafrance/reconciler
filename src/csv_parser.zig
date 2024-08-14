@@ -9,7 +9,7 @@ pub const CsvParser = struct {
     allocator: std.mem.Allocator,
     delimiter: u8, // record delimiter
     table: [][]?[]u8 = undefined, // holds CSV string slice pointers. This is the payload
-    raw_cells: std.SegmentedList(*RawCell, 256), // list of parsed CSV cells. blank cell/rows are skipped
+    raw_cells: std.SegmentedList(*RawCell, 256), // list of parsed CSV cells. blank cells/rows are skipped
     rows: usize = 1, // total number of rows in CSV file AFTER parsing
     cols: usize = 1, // maximum number of columns in a row (CSVs rows may be ragged)
     dirty: bool = false, // used with repeated calls to parse()

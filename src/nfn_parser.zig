@@ -46,44 +46,51 @@ pub const NfnParser = struct {
             const user_name = self.csv.table[i][user_name_col].?;
             const annos = self.csv.table[i][anno_col].?;
             print("{} {s} {s} {s}\n", .{ i, sub_id, class_id, user_name });
-            print("{s}\n", .{annos});
+            print("{s}\n\n", .{annos});
             var scanner = std.json.Scanner.initCompleteInput(self.allocator, annos);
             defer scanner.deinit();
-            var diag = std.json.Diagnostics{};
-            scanner.enableDiagnostics(&diag);
             while (true) {
                 switch (try scanner.peekNextTokenType()) {
-                    .end_of_document => break,
+                    .end_of_document => {
+                        std.debug.print("EOD\n", .{});
+                        break;
+                    },
                     .array_begin => {
-                        std.debug.print("Array began\n", .{});
-                        _ = try scanner.next(); // skip
+                        _ = try scanner.next();
+                        std.debug.print("array begin\n", .{});
                     },
                     .array_end => {
-                        std.debug.print("Array end\n", .{});
-                        _ = try scanner.next(); // skip
-                    },
-                    .string => switch (try scanner.next()) {
-                        .string, .partial_string => |payload| {
-                            std.debug.print("String found: `{s}` (line: {}, col: {})\n", .{ payload, diag.getLine(), diag.getColumn() });
-                        },
-                        else => return error.UnexpectedToken,
+                        _ = try scanner.next();
+                        std.debug.print("array end\n", .{});
                     },
                     .object_begin => {
-                        _ = try scanner.next(); // skip object begin token
-                        const key = (try scanner.next()).string;
-                        const value = switch (try scanner.next()) {
-                            .string, .partial_string => |payload| payload,
-                            else => return error.NotCoveredToken,
-                        };
-                        _ = try scanner.next(); // skip object end token
-
-                        std.debug.print("Object pair found: key:`{s}`, value:`{s}` (line: {}, col: {})\n", .{ key, value, diag.getLine(), diag.getColumn() });
+                        _ = try scanner.next();
+                        std.debug.print("object begin\n", .{});
                     },
                     .object_end => {
-                        std.debug.print("Object end\n", .{});
-                        _ = try scanner.next(); // skip
+                        _ = try scanner.next();
+                        std.debug.print("object end\n", .{});
                     },
-                    else => return error.NotCoveredToken,
+                    .number => {
+                        _ = try scanner.next();
+                        std.debug.print("number\n", .{});
+                    },
+                    .string => {
+                        const token = try scanner.nextAlloc(self.allocator, .alloc_always);
+                        std.debug.print("string '{s}'\n", .{token.allocated_string});
+                    },
+                    .true => {
+                        _ = try scanner.next();
+                        std.debug.print("true\n", .{});
+                    },
+                    .false => {
+                        _ = try scanner.next();
+                        std.debug.print("false\n", .{});
+                    },
+                    .null => {
+                        _ = try scanner.next();
+                        std.debug.print("null\n", .{});
+                    },
                 }
             }
             break;
