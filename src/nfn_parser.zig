@@ -21,7 +21,7 @@ pub const NfnParser = struct {
             .workflow_name = undefined,
         };
 
-        if (nfn.csv.rows < 2) {
+        if (nfn.csv.rows <= 1) {
             std.log.err("The CSV file is missing data.\n", .{});
             return NfnError.NoData;
         }
@@ -47,53 +47,81 @@ pub const NfnParser = struct {
             const annos = self.csv.table[i][anno_col].?;
             print("{} {s} {s} {s}\n", .{ i, sub_id, class_id, user_name });
             print("{s}\n\n", .{annos});
-            var scanner = std.json.Scanner.initCompleteInput(self.allocator, annos);
-            defer scanner.deinit();
-            while (true) {
-                switch (try scanner.peekNextTokenType()) {
-                    .end_of_document => {
-                        std.debug.print("EOD\n", .{});
-                        break;
-                    },
-                    .array_begin => {
-                        _ = try scanner.next();
-                        std.debug.print("array begin\n", .{});
-                    },
-                    .array_end => {
-                        _ = try scanner.next();
-                        std.debug.print("array end\n", .{});
-                    },
-                    .object_begin => {
-                        _ = try scanner.next();
-                        std.debug.print("object begin\n", .{});
-                    },
-                    .object_end => {
-                        _ = try scanner.next();
-                        std.debug.print("object end\n", .{});
-                    },
-                    .number => {
-                        _ = try scanner.next();
-                        std.debug.print("number\n", .{});
-                    },
-                    .string => {
-                        const token = try scanner.nextAlloc(self.allocator, .alloc_always);
-                        std.debug.print("string '{s}'\n", .{token.allocated_string});
-                    },
-                    .true => {
-                        _ = try scanner.next();
-                        std.debug.print("true\n", .{});
-                    },
-                    .false => {
-                        _ = try scanner.next();
-                        std.debug.print("false\n", .{});
-                    },
-                    .null => {
-                        _ = try scanner.next();
-                        std.debug.print("null\n", .{});
-                    },
-                }
-            }
+
+            try self.parseAnnotations(annos);
             break;
+        }
+    }
+
+    const Junk = struct {
+        task: []u8 = "",
+        value: []u8 = "",
+        task_label: []u8 = "",
+        label: []u8 = "",
+        option: []u8 = "",
+        select_label: []u8 = "",
+    };
+
+    fn prefix(scanner: std.json.Scanner, sub: u8) []const u8 {
+        const leader = [_]u8{' '} ** 32;
+        const indent: u32 = 2;
+        return leader[0 .. indent * (scanner.stackHeight() - sub)];
+    }
+
+    fn parseAnnotations(self: NfnParser, annotations: []u8) !void {
+        // const parsed = std.json.parseFromSlice(
+        //     std.json.ArrayHashMap(Junk),
+        //     self.allocator,
+        //     annotations,
+        //     .{},
+        // ) catch |err| {
+        //     print("error {!}\n", .{err});
+        //     return err;
+        // };
+        // defer parsed.deinit();
+
+        var scanner = std.json.Scanner.initCompleteInput(self.allocator, annotations);
+        defer scanner.deinit();
+        while (true) {
+            switch (try scanner.peekNextTokenType()) {
+                .end_of_document => break,
+                .array_begin => {
+                    _ = try scanner.next();
+                    print("{s}[\n", .{NfnParser.prefix(scanner, 1)});
+                },
+                .array_end => {
+                    _ = try scanner.next();
+                    print("{s}]\n", .{NfnParser.prefix(scanner, 0)});
+                },
+                .object_begin => {
+                    _ = try scanner.next();
+                    print("{s}{{\n", .{NfnParser.prefix(scanner, 1)});
+                },
+                .object_end => {
+                    _ = try scanner.next();
+                    print("{s}}}\n", .{NfnParser.prefix(scanner, 0)});
+                },
+                .number => {
+                    const token = try scanner.nextAlloc(self.allocator, .alloc_always);
+                    print("{s}{s}\n", .{ NfnParser.prefix(scanner, 0), token.allocated_number });
+                },
+                .string => {
+                    const token = try scanner.nextAlloc(self.allocator, .alloc_always);
+                    print("{s}\"{s}\"\n", .{ NfnParser.prefix(scanner, 0), token.allocated_string });
+                },
+                .true => {
+                    _ = try scanner.next();
+                    print("{s}true\n", .{NfnParser.prefix(scanner, 0)});
+                },
+                .false => {
+                    _ = try scanner.next();
+                    print("{s}false\n", .{NfnParser.prefix(scanner, 0)});
+                },
+                .null => {
+                    _ = try scanner.next();
+                    print("{s}null\n", .{NfnParser.prefix(scanner, 0)});
+                },
+            }
         }
     }
 
