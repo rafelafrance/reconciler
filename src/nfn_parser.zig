@@ -23,7 +23,7 @@ pub const NfnParser = struct {
 
         if (nfn.csv.rows <= 1) {
             std.log.err("The CSV file is missing data.\n", .{});
-            return NfnError.NoData;
+            return JsonError.NoData;
         }
 
         nfn.workflow_id = try nfn.get_workflow_id();
@@ -53,75 +53,57 @@ pub const NfnParser = struct {
         }
     }
 
-    const Junk = struct {
-        task: []u8 = "",
-        value: []u8 = "",
-        task_label: []u8 = "",
-        label: []u8 = "",
-        option: []u8 = "",
-        select_label: []u8 = "",
-    };
+    fn parseAnnotations(self: NfnParser, annotations: []u8) !void {
+        var parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, annotations, .{});
+        defer parsed.deinit();
 
-    fn prefix(scanner: std.json.Scanner, sub: u8) []const u8 {
-        const leader = [_]u8{' '} ** 32;
-        const indent: u32 = 2;
-        return leader[0 .. indent * (scanner.stackHeight() - sub)];
+        const root = parsed.value;
+
+        for (root.array.items) |task| {
+            try self.flatten_tasks(task, "");
+        }
     }
 
-    fn parseAnnotations(self: NfnParser, annotations: []u8) !void {
-        // const parsed = std.json.parseFromSlice(
-        //     std.json.ArrayHashMap(Junk),
-        //     self.allocator,
-        //     annotations,
-        //     .{},
-        // ) catch |err| {
-        //     print("error {!}\n", .{err});
-        //     return err;
-        // };
-        // defer parsed.deinit();
+    fn flatten_tasks(self: NfnParser, task_value: std.json.Value, prev_task_id: []const u8) !void {
+        const task = task_value.object;
 
-        var scanner = std.json.Scanner.initCompleteInput(self.allocator, annotations);
-        defer scanner.deinit();
-        while (true) {
-            switch (try scanner.peekNextTokenType()) {
-                .end_of_document => break,
-                .array_begin => {
-                    _ = try scanner.next();
-                    print("{s}[\n", .{NfnParser.prefix(scanner, 1)});
-                },
-                .array_end => {
-                    _ = try scanner.next();
-                    print("{s}]\n", .{NfnParser.prefix(scanner, 0)});
-                },
-                .object_begin => {
-                    _ = try scanner.next();
-                    print("{s}{{\n", .{NfnParser.prefix(scanner, 1)});
-                },
-                .object_end => {
-                    _ = try scanner.next();
-                    print("{s}}}\n", .{NfnParser.prefix(scanner, 0)});
-                },
-                .number => {
-                    const token = try scanner.nextAlloc(self.allocator, .alloc_always);
-                    print("{s}{s}\n", .{ NfnParser.prefix(scanner, 0), token.allocated_number });
-                },
-                .string => {
-                    const token = try scanner.nextAlloc(self.allocator, .alloc_always);
-                    print("{s}\"{s}\"\n", .{ NfnParser.prefix(scanner, 0), token.allocated_string });
-                },
-                .true => {
-                    _ = try scanner.next();
-                    print("{s}true\n", .{NfnParser.prefix(scanner, 0)});
-                },
-                .false => {
-                    _ = try scanner.next();
-                    print("{s}false\n", .{NfnParser.prefix(scanner, 0)});
-                },
-                .null => {
-                    _ = try scanner.next();
-                    print("{s}null\n", .{NfnParser.prefix(scanner, 0)});
-                },
+        const task_id = if (task.contains("task")) task.get("task").?.string else prev_task_id;
+
+        const value = task.get("value").?;
+        const first = if (eql(u8, @tagName(value), "array")) @tagName(value.array.items[0]) else "";
+
+        if (eql(u8, first, "string")) {
+            print("{s} list task\n", .{task_id});
+            // std.mem.dupe...
+            // std.mem.sort([]u8, &value.array.items, {}, std.sort.asc([]u8));
+            // const joined = try std.mem.join(self.allocator, " ", value.array.items);
+            // print("{s}\n", .{joined});
+        } else if (eql(u8, first, "object") and value.array.items[0].object.contains("points")) {
+            print("{s} polygon task\n", .{task_id});
+        } else if (eql(u8, first, "array") and value.object.contains("highlighter")) {
+            print("{s} highlighter task\n", .{task_id});
+        } else if (eql(u8, first, "object")) {
+            for (value.array.items) |subtask| {
+                try self.flatten_tasks(subtask, task_id);
             }
+        } else if (task.contains("select_label")) {
+            print("{s} {s}\n", .{ task_id, task.get("select_label").?.string });
+        } else if (task.contains("task_label")) {
+            print("{s} {s}\n", .{ task_id, task.get("task_label").?.string });
+        } else if (task.contains("tool_label") and task.contains("width")) {
+            print("{s} {s}\n", .{ task_id, task.get("tool_label").?.string });
+        } else if (task.contains("tool_label") and task.contains("x1")) {
+            print("{s} {s}\n", .{ task_id, task.get("tool_label").?.string });
+        } else if (task.contains("markIndex")) {
+            print("{s} {s}\n", .{ task_id, task.get("markIndex").?.string });
+        } else if (task.contains("toolType") and eql(u8, task.get("toolType").?.string, "point")) {
+            print("{s} {s}\n", .{ task_id, task.get("point").?.string });
+        } else if (task.contains("x") and task.contains("y")) {
+            print("{s} {s}\n", .{ task_id, task.get("point").?.string });
+        } else if (task.contains("task_type") and eql(u8, task.get("task_type").?.string, "dropdown-simple")) {
+            print("{s} {s}\n", .{ task_id, task.get("highlighter").?.string });
+        } else {
+            return JsonError.BadJson;
         }
     }
 
@@ -131,7 +113,7 @@ pub const NfnParser = struct {
         const idx = self.csv.firstInRow(0, @constCast("workflow_id"));
         if (idx == null) {
             std.log.err("The CSV file is missing a 'workflow_id' column.\n", .{});
-            return NfnError.WrongCsvType;
+            return JsonError.WrongCsvType;
         }
 
         const col = idx.?;
@@ -140,12 +122,12 @@ pub const NfnParser = struct {
         for (2..self.csv.rows) |row| {
             if (!eql(u8, self.csv.table[row][col].?, workflow_id)) {
                 std.log.err("There are multiple workflow_ids in this CSV.", .{});
-                return NfnError.MultipleWorkflows;
+                return JsonError.MultipleWorkflows;
             }
         }
         return col;
     }
 };
 
-pub const NfnError =
-    error{ NoData, WrongCsvType, MultipleWorkflows };
+pub const JsonError =
+    error{ NoData, WrongCsvType, MultipleWorkflows, BadJson };
