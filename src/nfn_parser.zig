@@ -1,5 +1,6 @@
 const std = @import("std");
 const csv_parser = @import("csv_parser.zig");
+const nfn_fields = @import("nfn_fields.zig");
 
 const print = std.debug.print;
 const eql = std.mem.eql;
@@ -60,51 +61,89 @@ pub const NfnParser = struct {
         const root = parsed.value;
 
         for (root.array.items) |task| {
-            try self.flatten_tasks(task, "");
+            try self.flattenTasks(task, "");
         }
     }
 
-    fn flatten_tasks(self: NfnParser, task_value: std.json.Value, prev_task_id: []const u8) !void {
-        const task = task_value.object;
+    fn lt(_: void, lhs: std.json.Value, rhs: std.json.Value) bool {
+        return std.mem.lessThan(u8, lhs.string, rhs.string);
+    }
 
-        const task_id = if (task.contains("task")) task.get("task").?.string else prev_task_id;
+    fn jsonStringJoin(self: NfnParser, value: std.json.Value) ![]const u8 {
+        var array = std.ArrayList([]const u8).init(self.allocator);
+        for (value.array.items) |item| try array.append(item.string);
+        const owned = try array.toOwnedSlice();
+        const joined = std.mem.join(self.allocator, " ", owned);
+        return joined;
+    }
 
-        const value = task.get("value").?;
+    fn flattenTasks(self: NfnParser, task: std.json.Value, prev_task_id: []const u8) JsonError!void {
+        const task_obj = task.object;
+
+        const task_id = if (task_obj.contains("task")) task_obj.get("task").?.string else prev_task_id;
+
+        const value = task_obj.get("value").?;
         const first = if (eql(u8, @tagName(value), "array")) @tagName(value.array.items[0]) else "";
 
         if (eql(u8, first, "string")) {
-            print("{s} list task\n", .{task_id});
-            // std.mem.dupe...
-            // std.mem.sort([]u8, &value.array.items, {}, std.sort.asc([]u8));
-            // const joined = try std.mem.join(self.allocator, " ", value.array.items);
-            // print("{s}\n", .{joined});
+            try self.listTask(task, task_id);
         } else if (eql(u8, first, "object") and value.array.items[0].object.contains("points")) {
             print("{s} polygon task\n", .{task_id});
         } else if (eql(u8, first, "array") and value.object.contains("highlighter")) {
             print("{s} highlighter task\n", .{task_id});
         } else if (eql(u8, first, "object")) {
-            for (value.array.items) |subtask| {
-                try self.flatten_tasks(subtask, task_id);
-            }
-        } else if (task.contains("select_label")) {
-            print("{s} {s}\n", .{ task_id, task.get("select_label").?.string });
-        } else if (task.contains("task_label")) {
-            print("{s} {s}\n", .{ task_id, task.get("task_label").?.string });
-        } else if (task.contains("tool_label") and task.contains("width")) {
-            print("{s} {s}\n", .{ task_id, task.get("tool_label").?.string });
-        } else if (task.contains("tool_label") and task.contains("x1")) {
-            print("{s} {s}\n", .{ task_id, task.get("tool_label").?.string });
-        } else if (task.contains("markIndex")) {
-            print("{s} {s}\n", .{ task_id, task.get("markIndex").?.string });
-        } else if (task.contains("toolType") and eql(u8, task.get("toolType").?.string, "point")) {
-            print("{s} {s}\n", .{ task_id, task.get("point").?.string });
-        } else if (task.contains("x") and task.contains("y")) {
-            print("{s} {s}\n", .{ task_id, task.get("point").?.string });
-        } else if (task.contains("task_type") and eql(u8, task.get("task_type").?.string, "dropdown-simple")) {
-            print("{s} {s}\n", .{ task_id, task.get("highlighter").?.string });
+            try self.subtasks(value, task_id);
+        } else if (task_obj.contains("select_label")) {
+            try self.selectLabelTask(task, task_id);
+        } else if (task_obj.contains("task_label")) {
+            try self.taskLabelTask(task, task_id);
+        } else if (task_obj.contains("tool_label") and task_obj.contains("width")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("tool_label").?.string });
+        } else if (task_obj.contains("tool_label") and task_obj.contains("x1")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("tool_label").?.string });
+        } else if (task_obj.contains("markIndex")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("markIndex").?.string });
+        } else if (task_obj.contains("toolType") and eql(u8, task_obj.get("toolType").?.string, "point")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("point").?.string });
+        } else if (task_obj.contains("x") and task_obj.contains("y")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("point").?.string });
+        } else if (task_obj.contains("task_type") and eql(u8, task_obj.get("task_type").?.string, "dropdown-simple")) {
+            print("{s} {s}\n", .{ task_id, task_obj.get("highlighter").?.string });
         } else {
             return JsonError.BadJson;
         }
+    }
+
+    fn subtasks(self: NfnParser, task: std.json.Value, task_id: []const u8) JsonError!void {
+        for (task.array.items) |subtask| try self.flattenTasks(subtask, task_id);
+    }
+
+    fn listTask(self: NfnParser, task: std.json.Value, task_id: []const u8) !void {
+        const value = task.object.get("value").?;
+        std.mem.sort(std.json.Value, value.array.items, {}, lt);
+        const joined = try self.jsonStringJoin(value);
+        const name = task.object.get("task_label").?.string;
+        const field = try nfn_fields.TextField.init(name, task_id, joined);
+        print("{s} {s} = {s}\n", .{ field.task_id, field.name, field.value });
+    }
+
+    fn selectLabelTask(_: NfnParser, task: std.json.Value, task_id: []const u8) !void {
+        var value: []const u8 = "";
+        if (task.object.contains("option")) {
+            value = task.object.get("label").?.string;
+        } else {
+            value = task.object.get("value").?.string;
+        }
+        const name = task.object.get("select_label").?.string;
+        const field = try nfn_fields.SelectField.init(name, task_id, value);
+        print("{s} {s} = {s}\n", .{ field.task_id, field.name, field.value });
+    }
+
+    fn taskLabelTask(_: NfnParser, task: std.json.Value, task_id: []const u8) !void {
+        const value: []const u8 = task.object.get("value").?.string;
+        const name = task.object.get("task_label").?.string;
+        const field = try nfn_fields.TextField.init(name, task_id, value);
+        print("{s} {s} = {s}\n", .{ field.task_id, field.name, field.value });
     }
 
     pub fn deinit() void {}
@@ -130,4 +169,4 @@ pub const NfnParser = struct {
 };
 
 pub const JsonError =
-    error{ NoData, WrongCsvType, MultipleWorkflows, BadJson };
+    error{ NoData, WrongCsvType, MultipleWorkflows, BadJson, OutOfMemory };
